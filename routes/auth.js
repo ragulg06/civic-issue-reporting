@@ -1,17 +1,26 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
+require("dotenv").config();
 
 const router = express.Router();
+
+// Nodemailer setup
+const transporter = nodemailer.createTransport({
+  service: "Gmail",
+  auth: { user: process.env.EMAIL, pass: process.env.EMAIL_PASS }
+});
 
 // Register
 router.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Check user exists
+    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ msg: "User already exists" });
 
@@ -19,11 +28,47 @@ router.post("/register", async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+
     // Save user
-    const newUser = new User({ username, email, password: hashedPassword });
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      verificationToken
+    });
     await newUser.save();
 
-    res.json({ msg: "User registered successfully ✅" });
+    // Send verification email
+    const mailOptions = {
+      from: process.env.EMAIL,
+      to: email,
+      subject: "Verify your Civic Account",
+      html: `<p>Hello ${username},</p>
+             <p>Click the link below to verify your account:</p>
+             <a href="${process.env.CLIENT_URL}/api/auth/verify/${verificationToken}">Verify Email</a>`
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({ msg: "Registration successful! Please check your email to verify your account." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verify email link
+router.get("/verify/:token", async (req, res) => {
+  try {
+    const user = await User.findOne({ verificationToken: req.params.token });
+    if (!user) return res.status(400).json({ msg: "Invalid or expired token" });
+
+    user.isVerified = true;
+    user.verificationToken = null;
+    await user.save();
+
+    res.json({ msg: "Email verified successfully! You can now log in." });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -34,16 +79,16 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check user
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ msg: "User does not exist" });
 
-    // Validate password
+    // Check if email verified
+    if (!user.isVerified) return res.status(401).json({ msg: "Please verify your email first" });
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: "Invalid credentials" });
 
-    // Generate JWT
-    const token = jwt.sign({ id: user._id }, "secretkey", { expiresIn: "1h" });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
     res.json({
       token,
@@ -54,7 +99,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Protected Route
+// Protected route
 router.get("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
