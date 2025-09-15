@@ -2,6 +2,8 @@ const express = require("express");
 const auth = require("../middleware/auth");
 const upload = require("../middleware/upload");
 const Post = require("../models/Post");
+const Like = require("../models/Like");
+const Comment = require("../models/Comment");
 
 const router = express.Router();
 
@@ -59,5 +61,75 @@ router.get("/", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+//✅ Like/Unlike Post
+// Like or Unlike a post
+router.post("/:id/like", auth, async (req, res) => {
+  try {
+    const postId = req.params.id;
+
+    const existingLike = await Like.findOne({ user: req.user.id, post: postId });
+
+    if (existingLike) {
+      // Unlike
+      await Like.findByIdAndDelete(existingLike._id);
+      return res.json({ msg: "Post unliked" });
+    } else {
+      // Like
+      const like = new Like({ user: req.user.id, post: postId });
+      await like.save();
+      return res.json({ msg: "Post liked" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🏪Add a comment to a post
+router.post("/:id/comment", auth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ msg: "Comment text is required" });
+
+    const comment = new Comment({
+      user: req.user.id,
+      post: req.params.id,
+      text
+    });
+
+    await comment.save();
+    res.json({ msg: "Comment added", comment });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/:id", auth, async (req, res) => {
+  try {
+    const postId = req.params.id;
+
+    const post = await Post.findById(postId).populate("user", "username email");
+    if (!post) return res.status(404).json({ msg: "Post not found" });
+
+    const likes = await Like.find({ post: postId }).populate("user", "username email");
+    const comments = await Comment.find({ post: postId })
+      .populate("user", "username email")
+      .sort({ createdAt: -1 });
+
+    const isLikedByUser = likes.some(like => like.user._id.toString() === req.user.id);
+
+    res.json({
+      post,
+      likesCount: likes.length,
+      commentsCount: comments.length,
+      isLikedByUser,
+      likes,
+      comments
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 module.exports = router;
