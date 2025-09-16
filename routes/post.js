@@ -131,5 +131,54 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
+router.get("/my/posts", auth, async (req, res) => {
+  try {
+    const posts = await Post.find({ user: req.user.id })
+      .populate("user", "username email")
+      .sort({ createdAt: -1 });
+
+    if (!posts || posts.length === 0) {
+      return res.status(404).json({ msg: "You haven’t created any posts yet" });
+    }
+
+    res.json({ msg: "Your posts", posts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✏️ Update a post (only owner, only within 5 minutes)
+router.put("/:id", auth, async (req, res) => {
+  try {
+    const postId = req.params.id;
+    const { description } = req.body;
+
+    // Find the post
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ msg: "Post not found" });
+
+    // Check ownership
+    if (post.user.toString() !== req.user.id) {
+      return res.status(403).json({ msg: "You are not authorized to edit this post" });
+    }
+
+    // Check 5-minute edit window
+    const now = new Date();
+    const diffMinutes = (now - post.createdAt) / 1000 / 60;
+    if (diffMinutes > 5) {
+      return res.status(400).json({ msg: "You can only edit a post within 5 minutes of creation" });
+    }
+
+    // Update description
+    if (description) post.description = description;
+    post.updatedAt = Date.now();
+
+    await post.save();
+    res.json({ msg: "Post updated successfully ✅", post });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 module.exports = router;

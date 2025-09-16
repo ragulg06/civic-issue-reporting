@@ -5,7 +5,14 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   isVerified: { type: Boolean, default: false },  // new
-  verificationToken: { type: String }    
+  verificationToken: { type: String }    , // new
+  
+    name: { type: String },
+  age: { type: Number },
+  dob: { type: Date },
+  phone: { type: String },
+ bio: { type: String },           // short description about user
+  profilePic: { type: String }, 
 }, { timestamps: true });
 
 module.exports = mongoose.model("User", userSchema);
