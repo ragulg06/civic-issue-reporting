@@ -34,6 +34,7 @@ mongoose
 app.use("/api/posts", postRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 const PORT = 5000;
 app.listen(PORT, "0.0.0.0", () => {
